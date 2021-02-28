@@ -36,6 +36,7 @@ import json
 import os
 import shutil
 from dataclasses import dataclass
+import re
 import requests
 from bs4 import BeautifulSoup
 
@@ -96,6 +97,14 @@ class WikipediaSeries(LoggerMixin):
         }
         return query_map
 
+    @staticmethod
+    def _get_match_regex(query_type):
+        regex_map = {
+            'episode_list': '^List of (?P<result_title>.+) episodes',
+            'miniseries': '^(?P<result_title>.+) (miniseries)$'
+        }
+        return regex_map[query_type]
+
     def search_by_name(self, name):
         """Search wikipedia for a tv show by name.
 
@@ -111,7 +120,14 @@ class WikipediaSeries(LoggerMixin):
             result = self._search(query)
             if result:
                 if len(result) == 1:
-                    self.title = name
+                    if query_type != 'episode_list':
+                        self._logger.debug('setting title to: {}'.format(result[0].title))
+                        self.title = result[0].title
+                    else:
+                        match = re.match(r'{}'.format(self._get_match_regex(query_type)), result[0].title)
+                        if match:
+                            self.title = match.group('result_title')
+                return result
         return result
 
     def _search(self, query):
@@ -124,7 +140,7 @@ class WikipediaSeries(LoggerMixin):
         if response.ok:
             return [SearchResult(*args) for args in zip(response.json()[1], response.json()[3])]
         self._logger.error('Request failed with code {} and message {}'.format(response.code, response.text))
-        return []
+        return None
 
     @staticmethod
     def get_soup_by_url(url):

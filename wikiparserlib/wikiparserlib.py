@@ -67,6 +67,8 @@ class SearchResult:
 
     title: str
     url: str
+    query: str
+    query_type: str
 
 
 class LoggerMixin():
@@ -98,12 +100,31 @@ class WikipediaSeries(LoggerMixin):
         return query_map
 
     @staticmethod
-    def _get_match_regex(query_type):
+    def _get_regex_map():
         regex_map = {
             'episode_list': '^List of (?P<result_title>.+) episodes',
-            'miniseries': '^(?P<result_title>.+) (miniseries)$'
+            'miniseries': '^(?P<result_title>.+)\\(miniseries\\)$'
         }
-        return regex_map[query_type]
+        return regex_map
+
+    @staticmethod
+    def check_for_match_in_result(results):
+        """Check for match in results and set the series title if match was found."""
+        if (len(results) == 1 or results[0].title == results[0].query):
+            return results[0]
+        return False
+
+    def parse_series_title_and_type(self, result):
+        """Parse and set the serise title and the type (miniseries or normal) from the found page title."""
+        for query_type, regex in self._get_regex_map().items():
+            regex_match = re.match(r'{}'.format(regex), result.title)
+            if regex_match:
+                self._logger.debug("found regex match {}:{}".format(regex, result.title))
+                self.title = regex_match.group('result_title').strip()
+                result.query_type = query_type
+                return
+            self._logger.debug("regex did not match: {}".format(regex))
+        self.title = result.title
 
     def search_by_name(self, name):
         """Search wikipedia for a tv show by name.
@@ -112,22 +133,14 @@ class WikipediaSeries(LoggerMixin):
             name (str): The name of the tv show to search for
 
         Return:
-            List[SearchResults]: A list of search result
+            List[SearchResults]: A list of search result or None if nothing was found.
 
         """
         for query_type, query in self._get_query_map(name).items():
             self._logger.debug('Searching for {} with type:{}'.format(name, query_type))
             result = self._search(query)
             if result:
-                if len(result) == 1:
-                    if query_type != 'episode_list':
-                        self._logger.debug('setting title to: {}'.format(result[0].title))
-                        self.title = result[0].title
-                    else:
-                        match = re.match(r'{}'.format(self._get_match_regex(query_type)), result[0].title)
-                        if match:
-                            self.title = match.group('result_title')
-                return result
+                break
         return result
 
     def _search(self, query):
@@ -138,7 +151,7 @@ class WikipediaSeries(LoggerMixin):
 
         response = requests.get(self.search_url, params=parameters)
         if response.ok:
-            return [SearchResult(*args) for args in zip(response.json()[1], response.json()[3])]
+            return [SearchResult(*args, query, None) for args in zip(response.json()[1], response.json()[3])]
         self._logger.error('Request failed with code {} and message {}'.format(response.code, response.text))
         return None
 
@@ -161,13 +174,16 @@ class WikipediaSeries(LoggerMixin):
                 season_list.append(season.contents[0])
         return season_list
 
-    def parse_seasons_and_episodes_from_soup(self, soup):
+    def parse_seasons_and_episodes_from_soup(self, soup, miniseries=False):
         """Parse the season and episode tables from the tv show soup object."""
         season_list = []
         tables = soup.find_all("table", {"class": "wikitable plainrowheaders wikiepisodetable"})
         for table in tables:
-            season_header = table.find_previous_sibling('h3')
-            season_title = season_header.find("span", {"class": "mw-headline"}).get_text(strip=True)
+            if miniseries:
+                season_title = "Miniseries"
+            else:
+                season_header = table.find_previous_sibling('h3')
+                season_title = season_header.find("span", {"class": "mw-headline"}).get_text(strip=True)
             season = Season(season_title)
             season.episodes = self.parse_html_table_to_json(table)
             season_list.append(season)

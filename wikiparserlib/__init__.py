@@ -32,7 +32,7 @@ Import all parts from wikiparserlib here
    http://google.github.io/styleguide/pyguide.html
 """
 from ._version import __version__
-
+from .wikiparserlib import WikipediaSeries
 __author__ = '''Niko Izsak <izsak.niko@gmail.com>'''
 __docformat__ = '''google'''
 __date__ = '''28-02-2021'''
@@ -44,3 +44,4 @@ __status__ = '''Development'''  # "Prototype", "Development", "Production".
 
 # This is to 'use' the module(s), so lint doesn't complain
 assert __version__
+assert WikipediaSeries

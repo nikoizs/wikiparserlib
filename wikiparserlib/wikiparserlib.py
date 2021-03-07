@@ -84,11 +84,21 @@ class WikipediaSeries(LoggerMixin):
     def __init__(self) -> None:
         super().__init__()
         self.search_url = WIKIPEDIA_SEARCH_API
-        self.seasons = []
+        self._seasons = []
         self.title = None
+        self.url = None
+        self.query_type = None
 
     def __str__(self):
         return f'series seasons: {self.seasons}'
+
+    @property
+    def seasons(self):
+        """List of Season objects."""
+        if self._seasons == []:
+            soup = self._get_soup_by_url(self.url)
+            self._seasons = self._parse_seasons_and_episodes_from_soup(soup)
+        return self._seasons
 
     @staticmethod
     def _get_query_map(name):
@@ -108,23 +118,23 @@ class WikipediaSeries(LoggerMixin):
         return regex_map
 
     @staticmethod
-    def check_for_match_in_result(results):
-        """Check for match in results and set the series title if match was found."""
-        if (len(results) == 1 or results[0].title == results[0].query):
-            return results[0]
+    def _check_for_match_in_result(results):
+        """Check for exact match in results."""
+        if len(results) > 0:
+            if (len(results) == 1 or results[0].title == results[0].query):
+                return results[0]
         return False
 
-    def parse_series_title_and_type(self, result):
+    def _parse_series_title_and_type(self, result):
         """Parse and set the serise title and the type (miniseries or normal) from the found page title."""
         for query_type, regex in self._get_regex_map().items():
             regex_match = re.match(r'{}'.format(regex), result.title)
             if regex_match:
                 self._logger.debug("found regex match {}:{}".format(regex, result.title))
-                self.title = regex_match.group('result_title').strip()
-                result.query_type = query_type
-                return
+                title = regex_match.group('result_title').strip()
+                return title, query_type
             self._logger.debug("regex did not match: {}".format(regex))
-        self.title = result.title
+        return result.title, None
 
     def search_by_name(self, name):
         """Search wikipedia for a tv show by name.
@@ -140,8 +150,8 @@ class WikipediaSeries(LoggerMixin):
             self._logger.debug('Searching for {} with type:{}'.format(name, query_type))
             result = self._search(query)
             if result:
-                break
-        return result
+                return result
+        return []
 
     def _search(self, query):
         parameters = {'action': 'opensearch',
@@ -151,19 +161,23 @@ class WikipediaSeries(LoggerMixin):
 
         response = requests.get(self.search_url, params=parameters)
         if response.ok:
-            return [SearchResult(*args, query, None) for args in zip(response.json()[1], response.json()[3])]
+            result = [SearchResult(*args, query, None) for args in zip(response.json()[1], response.json()[3])]
+            if self._check_for_match_in_result(result):
+                self.set_match(result[0])
+                return [result[0]]
+            return result
         self._logger.error('Request failed with code {} and message {}'.format(response.code, response.text))
         return None
 
     @staticmethod
-    def get_soup_by_url(url):
+    def _get_soup_by_url(url):
         """Get a BeautifulSoup object from URL."""
         html_response = requests.get(url)
         soup = BeautifulSoup(html_response.text, 'html.parser')
         return soup
 
     @staticmethod
-    def parse_seasons_from_soup(soup):  # Not used.
+    def _parse_seasons_from_soup(soup):  # Not used.
         """Parse the season numbers from the first season table."""
         season_list = []
         table = soup.find("table", {"class": "wikitable plainrowheaders"})
@@ -174,23 +188,23 @@ class WikipediaSeries(LoggerMixin):
                 season_list.append(season.contents[0])
         return season_list
 
-    def parse_seasons_and_episodes_from_soup(self, soup, miniseries=False):
+    def _parse_seasons_and_episodes_from_soup(self, soup):
         """Parse the season and episode tables from the tv show soup object."""
         season_list = []
         tables = soup.find_all("table", {"class": "wikitable plainrowheaders wikiepisodetable"})
         for table in tables:
-            if miniseries:
+            if self.query_type == "miniseries":
                 season_title = "Miniseries"
             else:
                 season_header = table.find_previous_sibling('h3')
                 season_title = season_header.find("span", {"class": "mw-headline"}).get_text(strip=True)
             season = Season(season_title)
-            season.episodes = self.parse_html_table_to_json(table)
+            season.episodes = self._parse_html_table_to_json(table)
             season_list.append(season)
-        self.seasons = season_list
+        return season_list
 
     @staticmethod
-    def parse_html_table_to_json(table):
+    def _parse_html_table_to_json(table):
         """Parse HTML table and extract headers as keys and rows as values in a dictionary."""
         table_data = [[cell.text.strip('"') for cell in row] for row in table("tr", {"class": "vevent"})]
         table_headers = [cell.text.strip() for cell in table.find("tr")("th", {"scope": "col"})]
@@ -201,6 +215,11 @@ class WikipediaSeries(LoggerMixin):
                 res_dict[table_headers[idx]] = item
             results_list.append(res_dict)
         return json.dumps(results_list, indent=4)
+
+    def set_match(self, match):
+        """Set the selected result as a match for the query, and parse the dat."""
+        self.title, self.query_type = self._parse_series_title_and_type(match)
+        self.url = match.url
 
     def write_to_file_system(self):
         """Write series data to the file system. Create folder tree and write episode data as json."""

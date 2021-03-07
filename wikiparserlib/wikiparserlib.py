@@ -223,6 +223,7 @@ class WikipediaSeries(LoggerMixin):
 
     def write_to_file_system(self):
         """Write series data to the file system. Create folder tree and write episode data as json."""
+        self._logger.info("Writing search results to file system for {}".format(self.title))
         for season in self.seasons:
             self._logger.debug("writing results to file sysytem for season: {}".format(season.number))
             directory = os.path.dirname(f'./results/{self.title}/{season.number}/')

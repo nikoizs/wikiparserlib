@@ -19,3 +19,9 @@ History
 ------------------
 
 * added missing assertion
+
+
+0.1.2 (07-03-2021)
+------------------
+
+* more informative logging

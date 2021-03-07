@@ -13,3 +13,9 @@ History
 ------------------
 
 * first realease of the library 
+
+
+0.1.1 (07-03-2021)
+------------------
+
+* added missing assertion

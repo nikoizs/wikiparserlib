@@ -25,3 +25,9 @@ History
 ------------------
 
 * more informative logging
+
+
+0.1.3 (12-03-2021)
+------------------
+
+* fix search

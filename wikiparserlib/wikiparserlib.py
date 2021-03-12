@@ -157,6 +157,8 @@ class WikipediaSeries(LoggerMixin):
         parameters = {'action': 'opensearch',
                       'format': 'json',
                       'formatversion': '2',
+                      'profile': 'strict',
+                      'limit': '3',
                       'search': query}
 
         response = requests.get(self.search_url, params=parameters)
